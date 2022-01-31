@@ -1,0 +1,11 @@
+*~
+._*
+.DS_Store
+.ipynb_checkpoints
+*.swp
+*.idea
+__pycache__
+*.asv
+.vscode
+
+
