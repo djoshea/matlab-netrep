@@ -17,6 +17,9 @@ classdef LinearMetric < handle
         % Some amount of regularization (alpha > 0) is required to
         % align zero-padded representations.
         zero_pad (1, 1) logical = true;
+        
+        % normalize the total variance across datasets
+        normalize_total_variance (1, 1) logical = false;
 
         score_method (1, 1) string {mustBeMember(score_method, ["angular", "euclidean"])} = "angular"
     end
@@ -40,10 +43,12 @@ classdef LinearMetric < handle
                 args.center_columns (1, 1) logical = true;
                 args.zero_pad (1, 1) logical = true;
                 args.score_method (1, 1) string ="angular"; 
+                args.normalize_total_variance (1, 1) logical = false;
             end
 
             met.alpha = args.alpha;
             met.center_columns = args.center_columns;
+            met.normalize_total_variance = args.normalize_total_variance;
             met.zero_pad = args.zero_pad;
             met.score_method = args.score_method;
         end
@@ -65,10 +70,21 @@ classdef LinearMetric < handle
            
             if met.center_columns
                 mx = mean(X, 1, 'omitnan');
+                X = X - mx;
             else
                 mx = zeros(1, size(X, 2));
             end
-            [Xw, Zx] = NetRep.Utils.whiten(X - mx, alpha=met.alpha, preserve_variance=true);
+            
+            if met.normalize_total_variance
+                normalizer = norm(X, 'fro');
+                X = X ./ normalizer;
+            else
+                normalizer = 1;
+            end
+            
+            [Xw, Zx] = NetRep.Utils.whiten(X, alpha=met.alpha, preserve_variance=true);
+            
+            Zx = Zx / normalizer;
         end
 
         function met = fit(met, X, Y)
@@ -127,8 +143,7 @@ classdef LinearMetric < handle
                 Y (:, :)
             end
 
-            met.fit(X, Y)
-            score = met.score(X, Y);
+            score = met.fit(X, Y).score(X, Y);
         end
 
         function score = score(met, X, Y)
@@ -174,6 +189,10 @@ classdef LinearMetric < handle
             else
                 tX = X * met.Wx_;
             end
+            
+%             if met.normalize_total_variance
+%                 tX = tX ./ norm(tX, 'fro');
+%             end
         end
 
         function tY = transform_Y(met, Y)
@@ -187,6 +206,10 @@ classdef LinearMetric < handle
                 tY = (Y - met.my_) * met.Wy_;
             else
                 tY = Y * met.Wy_;
+            end
+            
+            if met.normalize_total_variance
+                tY = tY ./ norm(tY, 'fro');
             end
         end
     end
