@@ -147,8 +147,9 @@ classdef LinearMetric < handle
         end
 
         function score = score(met, X, Y)
-            % Computes the angular distance between X and Y in
+            % Computes the distance metric between X and Y in
             % the aligned space.
+            %
             % Parameters
             % ----------
             % X : (num_samples x num_neurons) matrix of activations.
@@ -166,16 +167,56 @@ classdef LinearMetric < handle
 
             [tX, tY] = met.transform(X, Y);
 
-            if met.score_method == "angular"
-                score = NetRep.Utils.angular_distance(tX, tY);
+            switch met.score_method
+                case "angular"
+                    score = NetRep.Utils.angular_distance(tX, tY);
 
-            elseif met.score_method == "euclidean"
-                score = mean(vecnorm(tX - tY, 2, 2), 1, 'omitnan');
+                case "euclidean"
+                    score = mean(vecnorm(tX - tY, 2, 2), 1, 'omitnan');
 
-            else
-                error("Unknown score_method")
+                otherwise
+                    error("Unknown score_method")
             end
         end
+
+        function [score, score_vs_time] = score_vs_time(met, X, Y)
+            % Computes the distance metric between X and Y in
+            % the aligned space, as well as the contribution at each 
+            % time point to that cost.
+            %
+            % Parameters
+            % ----------
+            % X : (num_samples x num_neurons) matrix of activations.
+            % Y : (num_samples x num_neurons) matrix of activations.
+            % Returns
+            % -------
+            % score : float
+            %     Distance between X and Y.
+            % score_vs_time: float
+            %     Contribution to distance at each time point
+
+            arguments
+                met
+                X (:, :) 
+                Y (:, :)
+            end
+
+            [tX, tY] = met.transform(X, Y);
+
+            switch met.score_method
+                case "angular"
+                    error('Angular distance not supported vs. time.')
+%                     [score, score_vs_time] = NetRep.Utils.angular_distance(tX, tY);
+
+                case "euclidean"
+                    score_vs_time = vecnorm(tX - tY, 2, 2); % num_samples x 1
+                    score = mean(score_vs_time, 1, 'omitnan');
+
+                otherwise
+                    error("Unknown score_method")
+            end
+        end
+
 
         function tX = transform_X(met, X)
             % Transform X into the aligned space.
