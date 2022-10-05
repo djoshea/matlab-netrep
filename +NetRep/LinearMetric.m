@@ -63,6 +63,15 @@ classdef LinearMetric < handle
 
         function [mx, Xw, Zx] = partial_fit(met, X)
             % Computes partial whitening transformation
+           % Parameters
+            % ----------
+            % X : (num_samples x num_neurons) matrix of activations.
+            %
+            % Returns
+            % -------
+            % mx : (1 x num_neurons) means used for centering
+            % Xw : whitened data
+            % Zx : whitening matrix, scaled by normalizing term if normalize_total_variance
             arguments
                 met
                 X (:, :) 
@@ -201,7 +210,14 @@ classdef LinearMetric < handle
                 Y (:, :)
             end
 
+            
             [tX, tY] = met.transform(X, Y);
+
+%             N = size(X, 2);
+%             Xr = reshape(X, [109 7 N]);
+%             Yr = reshape(Y, [109 7 N]);
+%             tXr = reshape(tX, [109 7 N]);
+%             tYr = reshape(tY, [109 7 N]);
 
             switch met.score_method
                 case "angular"
@@ -231,6 +247,7 @@ classdef LinearMetric < handle
                 tX = X * met.Wx_;
             end
             
+            % normalizer sits inside Wx_
 %             if met.normalize_total_variance
 %                 tX = tX ./ norm(tX, 'fro');
 %             end
@@ -249,9 +266,10 @@ classdef LinearMetric < handle
                 tY = Y * met.Wy_;
             end
             
-            if met.normalize_total_variance
-                tY = tY ./ norm(tY, 'fro');
-            end
+            % normalizer sits inside Wx_
+%             if met.normalize_total_variance
+%                 tY = tY ./ norm(tY, 'fro');
+%             end
         end
     end
 
