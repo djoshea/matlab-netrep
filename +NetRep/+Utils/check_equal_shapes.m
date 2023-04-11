@@ -12,13 +12,17 @@ function [X, Y] = check_equal_shapes(X, Y, args)
     assert(ndims(Y) == nd, 'Y must have % dimensions', nd);
     
     if ~isequal(size(X), size(Y))
-        if args.zero_pad && size(X, 1) == size(Y, 1)
-            % Number of padded zeros to add.
-            n = max(size(X, nd), size(Y, nd));
-            
-            % Padding specifications for X and Y.
-            X = pad_to_len_along_dim(X, nd, n);
-            Y = pad_to_len_along_dim(Y, nd, n);
+        if args.zero_pad
+            if size(X, 1) == size(Y, 1)
+                % Number of padded zeros to add.
+                n = max(size(X, nd), size(Y, nd));
+                
+                % Padding specifications for X and Y.
+                X = pad_to_len_along_dim(X, nd, n);
+                Y = pad_to_len_along_dim(Y, nd, n);
+            else
+                error('Expected arrays with equal first dimension with zero_pad true');
+            end
         else
             error('Expected arrays with equal dimensions with zero_pad false');
         end

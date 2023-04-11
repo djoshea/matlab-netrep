@@ -18,10 +18,12 @@ classdef LinearMetric < handle
         % align zero-padded representations.
         zero_pad (1, 1) logical = true;
         
-        % normalize the total variance across datasets
+        % normalize the total variance across datasets by scaling the training data variance to 1
         normalize_total_variance (1, 1) logical = false;
 
         score_method (1, 1) string {mustBeMember(score_method, ["angular", "euclidean"])} = "angular"
+
+        aligned_dim (1, 1) double {mustBePositive} = Inf;
     end
 
     properties % 
@@ -44,6 +46,7 @@ classdef LinearMetric < handle
                 args.zero_pad (1, 1) logical = true;
                 args.score_method (1, 1) string ="angular"; 
                 args.normalize_total_variance (1, 1) logical = false;
+                args.aligned_dim (1, 1) double = Inf;
             end
 
             met.alpha = args.alpha;
@@ -51,6 +54,7 @@ classdef LinearMetric < handle
             met.normalize_total_variance = args.normalize_total_variance;
             met.zero_pad = args.zero_pad;
             met.score_method = args.score_method;
+            met.aligned_dim = args.aligned_dim;
         end
 
         function tf = get.is_fitted(met)
@@ -117,6 +121,13 @@ classdef LinearMetric < handle
             [met.my_, Yw, Zy] = met.partial_fit(Y);
             
             [U, ~, V] = svd(Xw' * Yw, 'econ');
+            num_neurons = size(U, 1);
+            if isfinite(met.aligned_dim) && met.aligned_dim < num_neurons
+                % truncate to aligned dim
+                U = U(:, 1:met.aligned_dim);
+                V = V(:, 1:met.aligned_dim);
+            end
+            
             met.Wx_ = Zx * U;
             met.Wy_ = Zy * V;
         end
