@@ -132,7 +132,7 @@ classdef LinearMetric < handle
             met.Wy_ = Zy * V;
         end
 
-        function [tX, tY] = transform(met, X, Y)
+        function [tX, tY] = transform(met, X, Y, args)
             % Applies linear alignment transformations to X and Y.
             % Parameters
             % ----------
@@ -147,11 +147,12 @@ classdef LinearMetric < handle
                 met
                 X (:, :) 
                 Y (:, :)
+                args.aligned_dim_mask (:, 1) = [];
             end
 
             [X, Y] = NetRep.Utils.check_equal_shapes(X, Y, nd=2, zero_pad=met.zero_pad);
-            tX = met.transform_X(X);
-            tY = met.transform_Y(Y);
+            tX = met.transform_X(X, aligned_dim_mask = args.aligned_dim_mask);
+            tY = met.transform_Y(Y, aligned_dim_mask = args.aligned_dim_mask);
         end
 
         function score = fit_score(met, X, Y)
@@ -166,7 +167,7 @@ classdef LinearMetric < handle
             score = met.fit(X, Y).score(X, Y);
         end
 
-        function score = score(met, X, Y)
+        function score = score(met, X, Y, args)
             % Computes the distance metric between X and Y in
             % the aligned space.
             %
@@ -183,23 +184,13 @@ classdef LinearMetric < handle
                 met
                 X (:, :) 
                 Y (:, :)
+                args.aligned_dim_mask (:, 1) = [];
             end
 
-            [tX, tY] = met.transform(X, Y);
-
-            switch met.score_method
-                case "angular"
-                    score = NetRep.Utils.angular_distance(tX, tY);
-
-                case "euclidean"
-                    score = mean(vecnorm(tX - tY, 2, 2), 1, 'omitnan');
-
-                otherwise
-                    error("Unknown score_method")
-            end
+            score = met.score_vs_time(X, Y, aligned_dim_mask = args.aligned_dim_mask);
         end
 
-        function [score, score_vs_time] = score_vs_time(met, X, Y)
+        function [score, score_vs_time] = score_vs_time(met, X, Y, args)
             % Computes the distance metric between X and Y in
             % the aligned space, as well as the contribution at each 
             % time point to that cost.
@@ -219,16 +210,11 @@ classdef LinearMetric < handle
                 met
                 X (:, :) 
                 Y (:, :)
+                args.aligned_dim_mask (:, 1) = [];
             end
 
             
-            [tX, tY] = met.transform(X, Y);
-
-%             N = size(X, 2);
-%             Xr = reshape(X, [109 7 N]);
-%             Yr = reshape(Y, [109 7 N]);
-%             tXr = reshape(tX, [109 7 N]);
-%             tYr = reshape(tY, [109 7 N]);
+            [tX, tY] = met.transform(X, Y, aligned_dim_mask = args.aligned_dim_mask);
 
             switch met.score_method
                 case "angular"
@@ -245,17 +231,34 @@ classdef LinearMetric < handle
         end
 
 
-        function tX = transform_X(met, X)
+        function tX = transform_X(met, X, args)
+            arguments
+                met
+                X
+                args.aligned_dim_mask (:, 1) = [];
+            end
+
             % Transform X into the aligned space.
             met.assert_is_fitted()
             if size(X, 2) ~= size(met.Wx_, 1)
                 error('Array with wrong shape passed transform, expected %d columns', size(met.Wx_, 1));
             end
 
+            % check whether aligned dim has changed and select specific aligned dimensions if requested (mostly for debuggging)
+            Wx = met.Wx_;
+            if isfinite(met.aligned_dim)
+                if size(Wx, 2) > met.aligned_dim
+                    Wx = Wx(:, 1:met.aligned_dim);
+                end
+            end
+            if ~isempty(args.aligned_dim_mask)
+                Wx = Wx(:, args.aligned_dim_mask);
+            end
+
             if met.center_columns
-                tX = (X - met.mx_) * met.Wx_;
+                tX = (X - met.mx_) * Wx;
             else
-                tX = X * met.Wx_;
+                tX = X * Wx;
             end
             
             % normalizer sits inside Wx_
@@ -264,17 +267,34 @@ classdef LinearMetric < handle
 %             end
         end
 
-        function tY = transform_Y(met, Y)
+        function tY = transform_Y(met, Y, args)
+            arguments
+                met
+                Y
+                args.aligned_dim_mask (:, 1) = [];
+            end
+
             % Transform X into the aligned space.
             met.assert_is_fitted()
             if size(Y, 2) ~= size(met.Wy_, 1)
                 error('Array with wrong shape passed transform, expected %d columns', size(met.Wy_, 1));
             end
 
+            % check whether aligned dim has changed and select specific aligned dimensions if requested (mostly for debuggging)
+            Wy = met.Wy_;
+            if isfinite(met.aligned_dim)
+                if size(Wy, 2) > met.aligned_dim
+                    Wy = Wy(:, 1:met.aligned_dim);
+                end
+            end
+            if ~isempty(args.aligned_dim_mask)
+                Wy = Wy(:, args.aligned_dim_mask);
+            end
+
             if met.center_columns
-                tY = (Y - met.my_) * met.Wy_;
+                tY = (Y - met.my_) * Wy;
             else
-                tY = Y * met.Wy_;
+                tY = Y * Wy;
             end
             
             % normalizer sits inside Wx_

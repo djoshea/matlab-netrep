@@ -13,13 +13,6 @@ classdef LinearMetricUnbiased < handle
         % to the linear/rotational alignment.
         center_columns (1, 1) logical = true
 
-        % If False, an error is thrown if representations are
-        % provided with different dimensions. If True, the smaller
-        % matrix is zero-padded prior to allow for an alignment.
-        % Some amount of regularization (alpha > 0) is required to
-        % align zero-padded representations.
-        zero_pad (1, 1) logical = true;
-        
         % normalize the total variance across datasets by scaling the training data variance to 1
         normalize_total_variance (1, 1) logical = false;
 
@@ -45,7 +38,7 @@ classdef LinearMetricUnbiased < handle
             arguments
                 args.alpha (1, 1) double {mustBeInRange(args.alpha, 0, 1)} = 1.0;
                 args.center_columns (1, 1) logical = true;
-                args.zero_pad (1, 1) logical = true;
+                %args.zero_pad (1, 1) logical = true;
                 args.score_method (1, 1) string = "euclidean"; 
                 args.normalize_total_variance (1, 1) logical = false;
                 args.aligned_dim (1, 1) double = Inf;
@@ -54,7 +47,6 @@ classdef LinearMetricUnbiased < handle
             met.alpha = args.alpha;
             met.center_columns = args.center_columns;
             met.normalize_total_variance = args.normalize_total_variance;
-            met.zero_pad = args.zero_pad;
 
             assert(args.score_method == "euclidean", "Only euclidean scores supported");
             met.score_method = args.score_method;
@@ -122,7 +114,7 @@ classdef LinearMetricUnbiased < handle
                 Y (:, :)
             end
 
-            [X, Y] = NetRep.Utils.check_equal_shapes(X, Y, nd=2, zero_pad=met.zero_pad);
+            %[X, Y] = NetRep.Utils.check_equal_shapes(X, Y, nd=2, zero_pad=true);
             [met.mx_, Xw, Zx] = met.partial_fit(X);
             [met.my_, Yw, Zy] = met.partial_fit(Y);
             
@@ -130,6 +122,7 @@ classdef LinearMetricUnbiased < handle
             [U, ~, V] = svd(Xw' * Yw, 'econ');
 
             num_neurons = size(U, 1);
+            
             if isfinite(met.aligned_dim) && met.aligned_dim < num_neurons
                 % truncate to aligned dim
                 U = U(:, 1:met.aligned_dim);
@@ -156,7 +149,7 @@ classdef LinearMetricUnbiased < handle
                 Y (:, :)
             end
 
-            [X, Y] = NetRep.Utils.check_equal_shapes(X, Y, nd=2, zero_pad=met.zero_pad);
+            % [X, Y] = NetRep.Utils.check_equal_shapes(X, Y, nd=2, zero_pad=true);
             tX = met.transform_X(X);
             tY = met.transform_Y(Y);
         end
@@ -193,7 +186,7 @@ classdef LinearMetricUnbiased < handle
             Ny = size(Ylookup, 1);
             S = size(single_trials, 1);
             T = size(single_trials{1}, 1);
-            C = max(cat(1, condition_lookup{:}), [], 'omitnan');
+            C = double(max(cat(1, condition_lookup{:}), [], 'omitnan'));
 
             S_ = max(cat(1, Xlookup(:, 1), Ylookup(:, 1)));
             assert(S_ <= S, 'Max sessions in X/Ylookup(:, 1)')
@@ -216,7 +209,7 @@ classdef LinearMetricUnbiased < handle
             end
         end
 
-        function [score, score_vs_time] = score_vs_time(met, single_trials, condition_lookup, Xlookup, Ylookup)
+        function [score, score_vs_time] = score_vs_time(met, single_trials, condition_lookup, Xlookup, Ylookup, args)
             % Computes the distance metric between X and Y in
             % the aligned space.
             %
@@ -229,8 +222,8 @@ classdef LinearMetricUnbiased < handle
             %
             % Returns
             % -------
-            % dist : float
-            %     Angular distance between X and Y.
+            % score is the total distance over time and conditions
+            % score_vs_time is time, conditions x 1
 
             arguments
                 met
@@ -238,44 +231,71 @@ classdef LinearMetricUnbiased < handle
                 condition_lookup (:, 1) cell
                 Xlookup (:, 2) 
                 Ylookup (:, 2)
+                args.aligned_dim_mask (:, 1) = []; % typical for debugging, to slice into Wx
+                args.center_each_fold (1, 1) logical = true;
             end
 
-           [X, Y] = met.means_from_single_trials(single_trials, condition_lookup, Xlookup, Ylookup);
+            %[X, Y] = met.means_from_single_trials(single_trials, condition_lookup, Xlookup, Ylookup);
             %[X, Y] = NetRep.Utils.check_equal_shapes(X, Y, nd=2, zero_pad=met.zero_pad);
+
+            %NetRep.Utils.check_equal_shapes(Xlookup', Ylookup', nd=2, zero_pad=true);
 
             % biased estimate looks like:
             % [tX, tY] = met.transform(X, Y);
             % score = mean(vecnorm(tX - tY, 2, 2), 1, 'omitnan');
 
-            trialCounts = cellfun(@(x) size(x, 3), single_trials);
+            %trialCounts = cellfun(@(x) size(x, 3), single_trials);
             %[bigFoldMatrices, smallFoldMatrices] = met.getSequentialFoldIndicatorMatrices(trialCounts); % S { nFolds x trials } logical indicator matrices
             S = numel(single_trials); % number of sessions
             T = size(single_trials{1}, 1); % num_samples
-            C = max(cat(1, condition_lookup{:}));
+            C = double(max(cat(1, condition_lookup{:})));
 
             % assemble partial projection scalars
             [delta_bar_small, delta_bar_big] = deal(cell(S, 1));
             M = nan(T*C, S, S);
+
+            % check whether aligned dim has changed and select specific aligned dimensions if requested (mostly for debuggging)
+            Wx = met.Wx_;
+            Wy = met.Wy_;
+            if isfinite(met.aligned_dim)
+                if size(Wx, 2) > met.aligned_dim
+                    Wx = Wx(:, 1:met.aligned_dim);
+                end
+                if size(Wy, 2) > met.aligned_dim
+                    Wy = Wy(:, 1:met.aligned_dim);
+                end
+            end
+            if ~isempty(args.aligned_dim_mask)
+                Wx = Wx(:, args.aligned_dim_mask);
+                Wy = Wy(:, args.aligned_dim_mask);
+            end
             for iS = 1:S
                 cond_this = condition_lookup{iS};
                 trial_mask_all_cond = cond_this >= 1; % this is the selection for all conditions
                 cond_this_masked = cond_this(trial_mask_all_cond);
 
-                n_trials = trialCounts(iS);
+                %n_trials = trialCounts(iS);
 
                 % extract the X neurons for this session
                 x_mask = Xlookup(:, 1) == iS;
                 x_cols = Xlookup(x_mask, 2);
                 
                 % neurons from X, projected through the appropriate columns of W
-                x_proj_trials = pagemtimes((single_trials{iS}(:, x_cols, trial_mask_all_cond) - met.mx_(x_mask)), met.Wx_(x_mask, :)); % T x N (xR) * (N x K)
+                % single trials is time x neurons x trials. subtract neuron means mx_, 
+                % multiply (T x N x R) * (N x K x R) --> (T x K x R)
+                x_proj_trials = pagemtimes((single_trials{iS}(:, x_cols, trial_mask_all_cond) - met.mx_(x_mask)), Wx(x_mask, :)); % T x N (xR) * (N x K)
 
                 % extract the Y neurons for this session
                 y_mask = Ylookup(:, 1) == iS;
                 y_cols = Ylookup(y_mask, 2);
                 
                 % neurons from X, projected through the appropriate columns of W
-                y_proj_trials = pagemtimes((single_trials{iS}(:, y_cols, trial_mask_all_cond) - met.my_(y_mask)), met.Wy_(y_mask, :)); % T x N (xR) * (N x K)
+                y_proj_trials = pagemtimes((single_trials{iS}(:, y_cols, trial_mask_all_cond) - met.my_(y_mask)), Wy(y_mask, :)); % T x N (xR) * (N x K)
+
+                if T > 1 && args.center_each_fold
+                    x_proj_trials = x_proj_trials - mean(x_proj_trials, 1, 'omitnan');
+                    y_proj_trials = y_proj_trials - mean(y_proj_trials, 1, 'omitnan');
+                end
 
                 K = max(size(x_proj_trials, 2), size(y_proj_trials, 2));
                 [delta_bar_small{iS}, delta_bar_small{iS}] = deal(nan(T*C, K));
